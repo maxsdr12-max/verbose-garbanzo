@@ -36,4 +36,8 @@ app.post("/api/questions",async(req,res)=>{try{
  const out=await groq([{role:"system",content:"Du bist ein intelligenter Lerncoach. Erstelle Multiple-Choice-Fragen aus den gelieferten Lerninhalten. Mische Themen bei mehreren Kategorien. Keine Trickfragen, genau eine Antwort richtig. Nur JSON."},{role:"user",content:`Plan: ${planTitle}\nZiel: ${goal}\nAnzahl: ${Math.min(10,Math.max(3,Number(count)||7))}\nKategorien:\n${cats}\nNotizen:\n${ns}`}],{name:"learnflow_questions",strict:true,schema:{type:"object",properties:{questions:{type:"array",items:{type:"object",properties:{question:{type:"string"},options:{type:"array",items:{type:"string"},minItems:4,maxItems:4},answer:{type:"integer",minimum:0,maximum:3},explanation:{type:"string"},category:{type:"string"},difficulty:{type:"string"}},required:["question","options","answer","explanation","category","difficulty"],additionalProperties:false}}},required:["questions"],additionalProperties:false}});
  res.json(out);
 }catch(e){res.status(500).json({error:e.message||"AI-Fehler"})}});
-app.listen(PORT,"127.0.0.1",()=>console.log(`LearnFlow AI läuft auf http://127.0.0.1:${PORT}`));
+const PORT = process.env.PORT || 8787;
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`LearnFlow API läuft auf Port ${PORT}`);
+});
