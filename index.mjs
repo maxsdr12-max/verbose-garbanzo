@@ -51,18 +51,17 @@ async function mistral(messages, schema) {
     };
 
     try {
-        const response = await fetch(
-            "https://api.mistral.ai/v1/chat/completions",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization:
-                        `Bearer ${process.env.MISTRAL_API_KEY}`
-                },
-                body: JSON.stringify(body)
-            }
-        );
+       const response = await fetch(
+    "https://api.mistral.ai/v1/chat/completions",
+    {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.MISTRAL_API_KEY}`
+        },
+        body: JSON.stringify(body)
+    }
+);
 
         const text = await response.text();
 
