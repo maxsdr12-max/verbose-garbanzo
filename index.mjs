@@ -24,7 +24,43 @@ app.get("/health", (_req, res) => {
         model: MODEL
     });
 });
+app.get("/models", async (_req, res) => {
+    try {
+        const response = await fetch(
+            "https://api.mistral.ai/v1/models",
+            {
+                headers: {
+                    "Authorization":
+                        "Bearer " + process.env.MISTRAL_API_KEY
+                }
+            }
+        );
 
+        const text = await response.text();
+
+        if (!response.ok) {
+            return res.status(response.status).send(text);
+        }
+
+        const data = JSON.parse(text);
+
+        const models = (data.data || []).map(model => ({
+            id: model.id,
+            capabilities: model.capabilities,
+            max_context_length: model.max_context_length,
+            archived: model.archived
+        }));
+
+        res.json({
+            count: models.length,
+            models
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: error?.message || String(error)
+        });
+    }
+});
 // =========================
 // MISTRAL AI
 // =========================
