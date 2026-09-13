@@ -1,3 +1,4 @@
+```js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -10,100 +11,92 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 const PORT = Number(process.env.PORT || 8787);
-const MODEL = process.env.GROQ_MODEL || "groq/compound";
-const FALLBACK =
-    process.env.GROQ_FALLBACK_MODEL || "qwen/qwen3.8-27b";
+const MODEL = "mistral-large-2512";
 
-// Health Check
+// =========================
+// HEALTH CHECK
+// =========================
+
 app.get("/health", (_req, res) => {
     res.json({
         ok: true,
-        provider: "groq",
-        model: MODEL,
-        fallback: FALLBACK
+        provider: "mistral",
+        model: MODEL
     });
 });
 
-// AI-Funktion
-async function groq(messages, schema) {
-    if (!process.env.GROQ_API_KEY) {
-        throw new Error("GROQ_API_KEY fehlt.");
+// =========================
+// MISTRAL AI
+// =========================
+
+async function mistral(messages, schema) {
+    if (!process.env.MISTRAL_API_KEY) {
+        throw new Error("MISTRAL_API_KEY fehlt.");
     }
 
-    let lastError = "";
-
-    for (const model of [MODEL, FALLBACK]) {
-        try {
-            const body = {
-                model,
-                messages,
-                temperature: 0.55,
-                max_tokens: 5000
-            };
-
-            if (model.startsWith("groq/")) {
-                body.response_format = {
-                    type: "json_object"
-                };
-
-                body.messages = [
-                    ...messages,
-                    {
-                        role: "system",
-                        content:
-                            `Antworte ausschließlich mit gültigem JSON passend zu diesem Schema: ${JSON.stringify(schema.schema)}`
-                    }
-                ];
-            } else {
-                body.response_format = {
-                    type: "json_schema",
-                    json_schema: schema
-                };
+    const body = {
+        model: MODEL,
+        messages: [
+            ...messages,
+            {
+                role: "system",
+                content:
+                    "Antworte ausschließlich mit gültigem JSON. " +
+                    "Halte dich exakt an dieses Schema:\n" +
+                    JSON.stringify(schema.schema)
             }
+        ],
+        temperature: 0.55,
+        max_tokens: 5000
+    };
 
-            const response = await fetch(
-                "https://api.groq.com/openai/v1/chat/completions",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization:
-                            `Bearer ${process.env.GROQ_API_KEY}`
-                    },
-                    body: JSON.stringify(body)
-                }
+    try {
+        const response = await fetch(
+            "https://api.mistral.ai/v1/chat/completions",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization:
+                        `Bearer ${process.env.MISTRAL_API_KEY}`
+                },
+                body: JSON.stringify(body)
+            }
+        );
+
+        const text = await response.text();
+
+        if (!response.ok) {
+            throw new Error(
+                `${MODEL} ${response.status}: ${text}`
             );
-
-            const text = await response.text();
-
-            if (!response.ok) {
-                lastError = `${model} ${response.status}: ${text}`;
-                continue;
-            }
-
-            const data = JSON.parse(text);
-            const content =
-                data?.choices?.[0]?.message?.content;
-
-            if (!content) {
-                lastError = `${model}: keine Antwort`;
-                continue;
-            }
-
-            try {
-                return JSON.parse(content);
-            } catch {
-                lastError = `${model}: ungültiges JSON`;
-                continue;
-            }
-        } catch (error) {
-            lastError = error?.message || String(error);
         }
-    }
 
-    throw new Error(
-        `AI-Modelle fehlgeschlagen. ${lastError}`
-    );
+        const data = JSON.parse(text);
+
+        const content =
+            data?.choices?.[0]?.message?.content;
+
+        if (!content) {
+            throw new Error(
+                `${MODEL}: keine Antwort erhalten`
+            );
+        }
+
+        try {
+            return JSON.parse(content);
+        } catch {
+            throw new Error(
+                `${MODEL}: ungültiges JSON erhalten`
+            );
+        }
+    } catch (error) {
+        throw new Error(
+            `Mistral fehlgeschlagen: ${
+                error?.message || String(error)
+            }`
+        );
+    }
 }
 
 // =========================
@@ -138,12 +131,16 @@ app.post("/api/plan", async (req, res) => {
                 )
                 .join("\n") || "Keine Notizen.";
 
-        const out = await groq(
+        const out = await mistral(
             [
                 {
                     role: "system",
                     content:
-                        "Du bist LearnFlow, ein Lernplan-Assistent. Erstelle realistische Lernpläne aus Kategorien und Notizen. Nutze verschiedene Methoden wie verstehen, wiederholen, anwenden, erklären und testen. Nur JSON."
+                        "Du bist LearnFlow, ein Lernplan-Assistent. " +
+                        "Erstelle realistische Lernpläne aus Kategorien " +
+                        "und Notizen. Nutze verschiedene Methoden wie " +
+                        "verstehen, wiederholen, anwenden, erklären und testen. " +
+                        "Nur JSON."
                 },
                 {
                     role: "user",
@@ -274,12 +271,16 @@ app.post("/api/questions", async (req, res) => {
             Math.max(3, Number(count) || 7)
         );
 
-        const out = await groq(
+        const out = await mistral(
             [
                 {
                     role: "system",
                     content:
-                        "Du bist ein intelligenter Lerncoach. Erstelle Multiple-Choice-Fragen aus den gelieferten Lerninhalten. Mische Themen bei mehreren Kategorien. Keine Trickfragen, genau eine Antwort richtig. Nur JSON."
+                        "Du bist ein intelligenter Lerncoach. " +
+                        "Erstelle Multiple-Choice-Fragen aus den gelieferten " +
+                        "Lerninhalten. Mische Themen bei mehreren Kategorien. " +
+                        "Keine Trickfragen, genau eine Antwort richtig. " +
+                        "Nur JSON."
                 },
                 {
                     role: "user",
@@ -369,3 +370,4 @@ app.listen(PORT, "0.0.0.0", () => {
         `LearnFlow AI läuft auf 0.0.0.0:${PORT}`
     );
 });
+```
