@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 const PORT = Number(process.env.PORT || 8787);
-const MODEL = "mistral-large-2512";
+const MODEL = "ministral-14b-2512";
 
 // =========================
 // HEALTH CHECK
