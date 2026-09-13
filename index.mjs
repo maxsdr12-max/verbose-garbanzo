@@ -1,4 +1,4 @@
-```js
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -51,17 +51,18 @@ async function mistral(messages, schema) {
     };
 
     try {
-       const response = await fetch(
-    "https://api.mistral.ai/v1/chat/completions",
-    {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.MISTRAL_API_KEY}`
-        },
-        body: JSON.stringify(body)
-    }
-);
+        const response = await fetch(
+            "https://api.mistral.ai/v1/chat/completions",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization":
+                        "Bearer " + process.env.MISTRAL_API_KEY
+                },
+                body: JSON.stringify(body)
+            }
+        );
 
         const text = await response.text();
 
@@ -82,11 +83,24 @@ async function mistral(messages, schema) {
             );
         }
 
+        // Falls Mistral trotzdem Markdown-Codeblöcke zurückgibt
+        let cleanContent = content.trim();
+
+        if (cleanContent.startsWith("```json")) {
+            cleanContent = cleanContent
+                .replace(/^```json\s*/, "")
+                .replace(/\s*```$/, "");
+        } else if (cleanContent.startsWith("```")) {
+            cleanContent = cleanContent
+                .replace(/^```\s*/, "")
+                .replace(/\s*```$/, "");
+        }
+
         try {
-            return JSON.parse(content);
+            return JSON.parse(cleanContent);
         } catch {
             throw new Error(
-                `${MODEL}: ungültiges JSON erhalten`
+                `${MODEL}: ungültiges JSON erhalten: ${cleanContent.slice(0, 500)}`
             );
         }
     } catch (error) {
@@ -136,10 +150,10 @@ app.post("/api/plan", async (req, res) => {
                     role: "system",
                     content:
                         "Du bist LearnFlow, ein Lernplan-Assistent. " +
-                        "Erstelle realistische Lernpläne aus Kategorien " +
-                        "und Notizen. Nutze verschiedene Methoden wie " +
-                        "verstehen, wiederholen, anwenden, erklären und testen. " +
-                        "Nur JSON."
+                        "Erstelle realistische Lernpläne aus Kategorien und Notizen. " +
+                        "Nutze verschiedene Methoden wie verstehen, wiederholen, " +
+                        "anwenden, erklären und testen. " +
+                        "Antworte ausschließlich mit JSON."
                 },
                 {
                     role: "user",
@@ -276,10 +290,10 @@ app.post("/api/questions", async (req, res) => {
                     role: "system",
                     content:
                         "Du bist ein intelligenter Lerncoach. " +
-                        "Erstelle Multiple-Choice-Fragen aus den gelieferten " +
-                        "Lerninhalten. Mische Themen bei mehreren Kategorien. " +
-                        "Keine Trickfragen, genau eine Antwort richtig. " +
-                        "Nur JSON."
+                        "Erstelle Multiple-Choice-Fragen aus den gelieferten Lerninhalten. " +
+                        "Mische Themen bei mehreren Kategorien. " +
+                        "Keine Trickfragen. Genau eine Antwort ist richtig. " +
+                        "Antworte ausschließlich mit JSON."
                 },
                 {
                     role: "user",
@@ -369,4 +383,3 @@ app.listen(PORT, "0.0.0.0", () => {
         `LearnFlow AI läuft auf 0.0.0.0:${PORT}`
     );
 });
-```
