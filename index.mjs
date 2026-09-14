@@ -2,6 +2,11 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import multer from "multer";
+import fs from "fs/promises";
+import path from "path";
+import mammoth from "mammoth";
+import { PDFParse } from "pdf-parse";
 
 dotenv.config();
 
@@ -9,6 +14,14 @@ const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+
+const MAX_DOCUMENT_BYTES = 250 * 1024 * 1024;
+const upload = multer({
+    dest: "/tmp/learnflow-documents",
+    limits: { fileSize: MAX_DOCUMENT_BYTES }
+});
+
+const TEXT_EXTENSIONS = new Set([".txt", ".md", ".csv", ".json", ".log", ".rtf"]);
 
 const PORT = Number(process.env.PORT || 8787);
 const MODEL = "ministral-14b-2512";
@@ -149,7 +162,87 @@ async function mistral(messages, schema) {
 }
 
 // =========================
+// DOKUMENTE
+// =========================
+
+function documentExtension(filename = "") {
+    return path.extname(filename).toLowerCase();
+}
+
+async function extractUploadedDocument(file) {
+    const ext = documentExtension(file.originalname);
+    const buffer = await fs.readFile(file.path);
+
+    if (TEXT_EXTENSIONS.has(ext)) {
+        return buffer.toString("utf8");
+    }
+
+    if (ext === ".docx") {
+        const result = await mammoth.extractRawText({ buffer });
+        return result.value || "";
+    }
+
+    if (ext === ".pdf") {
+        const parser = new PDFParse({ data: buffer });
+        try {
+            const result = await parser.getText();
+            return result.text || "";
+        } finally {
+            await parser.destroy();
+        }
+    }
+
+    throw new Error(
+        "Dateityp nicht unterstützt. Erlaubt: TXT, MD, CSV, JSON, LOG, RTF, DOCX und PDF."
+    );
+}
+
+app.post("/api/documents/extract", upload.single("file"), async (req, res) => {
+    let tempPath = req.file?.path;
+
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                error: "Keine Datei hochgeladen."
+            });
+        }
+
+        const text = (await extractUploadedDocument(req.file)).trim();
+
+        if (!text) {
+            return res.status(422).json({
+                error: "Aus dem Dokument konnte kein Text gelesen werden."
+            });
+        }
+
+        res.json({
+            ok: true,
+            name: req.file.originalname,
+            size: req.file.size,
+            type: req.file.mimetype,
+            text
+        });
+    } catch (error) {
+        console.error("Dokument-Fehler:", error);
+
+        const message =
+            error?.code === "LIMIT_FILE_SIZE"
+                ? "Die Datei ist zu groß. Maximal 250 MB sind erlaubt."
+                : error?.message || "Dokument konnte nicht verarbeitet werden.";
+
+        res.status(error?.code === "LIMIT_FILE_SIZE" ? 413 : 500).json({
+            error: message
+        });
+    } finally {
+        if (tempPath) {
+            await fs.unlink(tempPath).catch(() => {});
+        }
+    }
+});
+
+// =========================
 // LEARNPLAN
+
 // =========================
 
 app.post("/api/plan", async (req, res) => {
@@ -159,7 +252,8 @@ app.post("/api/plan", async (req, res) => {
             minutes,
             weeks,
             categories = [],
-            notes = []
+            notes = [],
+            documents = []
         } = req.body;
 
         const cats =
@@ -180,6 +274,15 @@ app.post("/api/plan", async (req, res) => {
                 )
                 .join("\n") || "Keine Notizen.";
 
+        const docs =
+            documents
+                .map(
+                    d =>
+                        `- ${d.name}: ${String(
+                            d.content || ""
+                        ).slice(0, 20000)}`
+                )
+                .join("\n\n") || "Keine Dokumente.";
         const out = await mistral(
             [
                 {
@@ -198,7 +301,8 @@ app.post("/api/plan", async (req, res) => {
                         `Minuten pro Tag: ${minutes}\n` +
                         `Wochen: ${weeks}\n` +
                         `Kategorien:\n${cats}\n` +
-                        `Notizen:\n${ns}`
+                        `Notizen:\n${ns}\n` +
+                        `Dokumente:\n${docs}`
                 }
             ],
             {
@@ -294,6 +398,7 @@ app.post("/api/questions", async (req, res) => {
             goal = "",
             categories = [],
             notes = [],
+            documents = [],
             count = 7
         } = req.body;
 
@@ -315,6 +420,15 @@ app.post("/api/questions", async (req, res) => {
                 )
                 .join("\n") || "Keine Notizen.";
 
+        const docs =
+            documents
+                .map(
+                    d =>
+                        `${d.name}: ${String(
+                            d.content || ""
+                        ).slice(0, 20000)}`
+                )
+                .join("\n\n") || "Keine Dokumente.";
         const questionCount = Math.min(
             10,
             Math.max(3, Number(count) || 7)
@@ -338,7 +452,8 @@ app.post("/api/questions", async (req, res) => {
                         `Ziel: ${goal}\n` +
                         `Anzahl: ${questionCount}\n` +
                         `Kategorien:\n${cats}\n` +
-                        `Notizen:\n${ns}`
+                        `Notizen:\n${ns}\n` +
+                        `Dokumente:\n${docs}`
                 }
             ],
             {
@@ -415,7 +530,5 @@ app.post("/api/questions", async (req, res) => {
 // =========================
 
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(
-        `LearnFlow AI läuft auf 0.0.0.0:${PORT}`
-    );
+    console.log(`LearnFlow AI-Backend läuft auf Port ${PORT}`);
 });
